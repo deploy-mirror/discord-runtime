@@ -1,5 +1,8 @@
 import secrets
 import json
+import os
+import tempfile
+from json import JSONDecodeError
 from role_handler import check_role
 from message_handler import general_message
 
@@ -37,7 +40,7 @@ async def add_code(message):
         }
         #adding to json
         data = read_json("codes.json")
-        data["codes"].append(json_code)
+        data.setdefault("codes", []).append(json_code)
         save_json("codes.json", data)
 
         await general_message(message.channel, code)
@@ -82,11 +85,37 @@ async def show_codes(message):
 
 
 def read_json(file):
-    with open(file, "r") as full:
-        data = json.load(full)
-        return data
+    default = {"codes": []}
+
+    try:
+        with open(file, "r") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return default
+    except JSONDecodeError:
+        return default
+
+    # Ensure correct structure
+    if not isinstance(data, dict):
+        return default
+    if "codes" not in data or not isinstance(data["codes"], list):
+        data["codes"] = []
+
+    return data
 
 def save_json(filename, data):
-    with open(filename, "w") as file:
-        json.dump(data, file, indent=4)
+    directory = os.path.dirname(filename) or "."
+    fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".tmp_", text=True)
+    try:
+        with os.fdopen(fd, "w") as tmp:
+            json.dump(data, tmp, indent=4)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        os.replace(tmp_path, filename)  # atomic on same filesystem
+    except Exception:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
 
